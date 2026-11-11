@@ -31,36 +31,69 @@
   });
   if (search) search.addEventListener("input", apply);
 
+  // ---- RFQ form: posts to FormSubmit (sales@cavityfilter.com); WhatsApp and email are alternatives.
   var form = document.getElementById("rfq");
   if (!form) return;
-  form.addEventListener("submit", function (e) {
-    e.preventDefault();
-    if (form.company_website && form.company_website.value) return;
-    var required = ["name", "company", "email", "country", "product", "message"];
+  var err = document.getElementById("form-error");
+  var wa = document.getElementById("wa-link");
+  var mail = document.getElementById("mail-link");
+  var waNumber = form.getAttribute("data-wa");
+  var mailBase = mail ? mail.getAttribute("href").split("?")[0] : "";
+  var required = ["name", "company", "email", "country", "product", "message"];
+
+  function summary() {
+    var lines = [];
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!el.name || el.type === "submit" || el.type === "hidden" || el.name.charAt(0) === "_") return;
+      if (String(el.value).trim()) lines.push(el.name + ": " + String(el.value).trim());
+    });
+    return lines.join("\n");
+  }
+  function refreshLinks() {
+    var text = summary();
+    if (wa) wa.href = "https://wa.me/" + waNumber + (text ? "?text=" + encodeURIComponent(text) : "");
+    if (mail) mail.href = mailBase + "?subject=" + encodeURIComponent("RFQ " + (form.elements.model && form.elements.model.value || form.elements.product.value || "")) +
+      (text ? "&body=" + encodeURIComponent(text) : "");
+  }
+  form.addEventListener("input", refreshLinks);
+  form.addEventListener("change", refreshLinks);
+  refreshLinks();
+
+  function valid() {
     var missing = required.filter(function (key) {
       return !form.elements[key] || !String(form.elements[key].value).trim();
     });
-    var email = String(form.elements.email.value || "");
-    var emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    var err = document.getElementById("form-error");
-    var ok = document.getElementById("form-ok");
-    if (missing.length || !emailOk) {
+    var emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.elements.email.value || ""));
+    return !missing.length && emailOk;
+  }
+
+  form.addEventListener("submit", function (e) {
+    if (form._honey && form._honey.value) { e.preventDefault(); return; }
+    if (!valid()) {
+      e.preventDefault();
       err.textContent = form.getAttribute("data-error");
-      ok.style.display = "none";
       return;
     }
     err.textContent = "";
-    var lines = [];
-    Array.prototype.forEach.call(form.elements, function (el) {
-      if (!el.name || el.type === "submit" || el.name === "company_website") return;
-      if (String(el.value).trim()) lines.push(el.name + ": " + el.value.trim());
-    });
-    var summary = lines.join("\n");
-    var pre = document.getElementById("form-summary");
-    pre.textContent = summary;
-    ok.style.display = "block";
-    var wa = document.getElementById("wa-link");
-    wa.href = "https://wa.me/8618688718926?text=" + encodeURIComponent(summary);
-    form.reset();
+    if (!window.fetch || !window.FormData) return; // normal POST to FormSubmit, which redirects to _next
+    e.preventDefault();
+    var btn = form.querySelector("button[type=submit]");
+    var label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = form.getAttribute("data-sending");
+    fetch(form.getAttribute("data-ajax"), { method: "POST", headers: { Accept: "application/json" }, body: new FormData(form) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (res.ok && String(res.j.success) !== "false") {
+          window.location.href = form.elements._next.value;
+        } else {
+          throw new Error(res.j && res.j.message || "send failed");
+        }
+      })
+      .catch(function () {
+        btn.disabled = false;
+        btn.textContent = label;
+        err.textContent = form.getAttribute("data-fail");
+      });
   });
 })();
