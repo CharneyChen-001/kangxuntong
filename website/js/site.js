@@ -39,12 +39,13 @@
   var mail = document.getElementById("mail-link");
   var waNumber = form.getAttribute("data-wa");
   var mailBase = mail ? mail.getAttribute("href").split("?")[0] : "";
-  var required = ["name", "company", "email", "country", "product", "message"];
+  var required = Array.prototype.map.call(form.querySelectorAll("[required]"), function (el) { return el.name; });
+  var fileInput = form.querySelector("input[type=file]");
 
   function summary() {
     var lines = [];
     Array.prototype.forEach.call(form.elements, function (el) {
-      if (!el.name || el.type === "submit" || el.type === "hidden" || el.name.charAt(0) === "_") return;
+      if (!el.name || el.type === "submit" || el.type === "hidden" || el.type === "file" || el.name.charAt(0) === "_") return;
       if (String(el.value).trim()) lines.push(el.name + ": " + String(el.value).trim());
     });
     return lines.join("\n");
@@ -64,7 +65,9 @@
       return !form.elements[key] || !String(form.elements[key].value).trim();
     });
     var emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.elements.email.value || ""));
-    return !missing.length && emailOk;
+    var size = 0;
+    if (fileInput && fileInput.files) Array.prototype.forEach.call(fileInput.files, function (f) { size += f.size; });
+    return !missing.length && emailOk && size <= 10 * 1024 * 1024;
   }
 
   form.addEventListener("submit", function (e) {
@@ -76,6 +79,7 @@
     }
     err.textContent = "";
     if (!window.fetch || !window.FormData) return; // normal POST to FormSubmit, which redirects to _next
+    if (fileInput && fileInput.files && fileInput.files.length) return; // attachments go by normal multipart POST (not AJAX)
     e.preventDefault();
     var btn = form.querySelector("button[type=submit]");
     var label = btn.textContent;

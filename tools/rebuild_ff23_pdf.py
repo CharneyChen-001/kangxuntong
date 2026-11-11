@@ -5,15 +5,20 @@ The first transcription split the two-column source table into four
 "ports" and printed a model number that may belong to a customer. This
 keeps the Rev A header/footer of the old file, clears the body and lays the
 same numbers out as one table. No number is changed.
+The font subset carries no OpenType layout features so the text copies
+cleanly (no "fi" ligature, no digit variants without a Unicode mapping).
 Requires PyMuPDF + fontTools and Noto Sans CJK SC (OTF) at KXT_CJK_FONT.
 """
-import os, pathlib, tempfile
+import os, pathlib, subprocess, tempfile
 import pymupdf
 from fontTools import subset
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PDF = ROOT / "website" / "datasheets" / "KXT-FF-23.pdf"
 FONTFILE = os.environ.get("KXT_CJK_FONT", "/workspace/kxt-noto-sc.otf")
+# The 4-page original transcription (first commit). The rebuild always starts
+# from it, so running this script again gives the same file.
+SRC_COMMIT = "6893ba6"
 
 ROWS = [  # (zh label, en label, channel 1, channel 2 or None = one value for both)
     ("工作频段", "Passband", "1710-1785MHz", "1805-1880MHz"),
@@ -89,13 +94,15 @@ ul { margin: 0; padding-left: 10pt; color: #5e584f; font-size: 7.5pt; }
 def main():
     text = "".join(html(ZH, False) + html(EN, True)) + "Page 12"
     tmp = tempfile.mkdtemp()
-    opts = subset.Options(); opts.name_IDs = ["*"]; opts.notdef_outline = True; opts.layout_features = ["*"]
+    opts = subset.Options(); opts.name_IDs = ["*"]; opts.notdef_outline = True; opts.layout_features = []  # no GSUB: ligatures / digit variants have no ToUnicode and break copy-paste
     f = subset.load_font(FONTFILE, opts)
     s = subset.Subsetter(opts); s.populate(text=text + "0123456789"); s.subset(f)
     subset.save_font(f, os.path.join(tmp, "kxt.otf"), opts)
     arch = pymupdf.Archive(tmp)
 
-    doc = pymupdf.open(PDF)
+    src = subprocess.run(["git", "-C", str(ROOT), "show", f"{SRC_COMMIT}:website/datasheets/KXT-FF-23.pdf"],
+                         check=True, capture_output=True).stdout
+    doc = pymupdf.open(stream=src, filetype="pdf")
     keep = [0, 2]  # first page of the Chinese and of the English section
     doc.select(keep)
     for i, (page, t, en) in enumerate(zip(doc, (ZH, EN), (False, True))):
