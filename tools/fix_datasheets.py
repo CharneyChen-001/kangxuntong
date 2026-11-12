@@ -171,6 +171,8 @@ def cm4_b1n78(d):
 
 
 def ff11(d):
+    """Deprecated. Used during the 2026-11-11 review to print 11.0dB *.
+    The factory Word file displays 1.0 dB (narrow-cell overflow). Use rebuild_ff11_pdf.py."""
     n = 0
     zh = [x for x in nth_line(d, "插入损耗(dB)") if "Insertion" not in "".join(s["text"] for s in x[1]["spans"])]
     en = nth_line(d, "插入损耗(dB) / Insertion loss")
@@ -223,7 +225,10 @@ def catalog(d):
 if __name__ == "__main__":
     fix("KXT-CM4-WIDE.pdf", cm4_wide)
     fix("KXT-CM4-B1N78.pdf", cm4_b1n78)
-    fix("KXT-FF-11.pdf", ff11)
+    # FF-11 is rebuilt by tools/rebuild_ff11_pdf.py (port-5 IL is 1.0 dB as
+    # displayed in Word). Do not re-run ff11() on the current PDF: it would
+    # write the overflowing XML text 11.0dB back into the sheet.
+    # fix("KXT-FF-11.pdf", ff11)
     fix("KXT-FF-07.pdf", ff0708)
     fix("KXT-FF-08.pdf", ff0708)
     fix("KXT-FF-01.pdf", ff01)
