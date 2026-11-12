@@ -47,7 +47,7 @@ FF0708_ZH_NOTES = [
     "· 特性阻抗：原稿写了 50 Ω 的，以原稿为准；原稿没写的，N 与 SMA 口按 50 Ω。",
     "· 室内型铝合金腔体。测试条件 25 °C、50 Ω、矢量网络分析仪。出货附该件测试报告。",
     "· 原稿没有互调指标。若订单选择低互调档，按 PIM3 ≤ −150 dBc @ 2×43 dBm 测试并写入报告。",
-    "· * 原稿有一栏驻波写作 ≤0.9（驻波比不能小于 1，可能是 1.9 的笔误，或把回波损耗写成了驻波）。誊清无法确定是哪一个端口，故未改写成 1.9 或其他值。表内印出的 ≤1.3 是同表其余端口的原稿值；所有驻波栏标 *，以工厂书面确认为准。",
+    "· * 原稿第 3 端口驻波写作 ≤0.9（驻波比不能小于 1；格子够宽，Word 显示与 XML 一致，不是溢出。可能是 1.9 的笔误，或把回波损耗写成了驻波）。本页按原稿印出 ≤0.9，未改写成其他值，标 *。第 1、2 端口原稿为 ≤1.3。以工厂书面确认为准。",
     "· 接头原稿写作 ISMA-F，已改为 SMA-F。",
     "· 多端口表：插损、抑制、隔离只印该端口原稿里有的格子。标 † 的是合并单元格，字只出现在部分端口，已抄到空白端口，数字未改。",
 ]
@@ -56,7 +56,7 @@ FF0708_EN_NOTES = [
     "· Impedance: where the source states 50 Ω, that stands. Where it is silent, N and SMA ports are 50 Ω.",
     "· Indoor aluminum cavity. Tested at 25 °C in a 50 Ω system on a vector network analyzer. A test report ships with the unit.",
     "· The source sheet has no PIM limit. If the order selects the low-PIM option, test PIM3 to ≤ −150 dBc @ 2×43 dBm and put it on the report.",
-    "· * One VSWR cell on the source sheet was written ≤0.9 (VSWR cannot be below 1; it may be a typo for 1.9, or a return-loss figure written as VSWR). The port cannot be identified, so that cell is not rewritten as 1.9 or any other invented value. The ≤1.3 figures shown are those written on the other ports; all VSWR rows are marked * and pending written factory confirmation.",
+    "· * Port 3 VSWR is written ≤0.9 on the source sheet (VSWR cannot be below 1; the cell is wide, and the Word display matches the XML, so this is not an overflow. It may be a typo for 1.9, or a return-loss figure written as VSWR). This page prints ≤0.9 as written, marked *, and does not rewrite it. Ports 1 and 2 are ≤1.3 as written. Pending written factory confirmation.",
     "· The connector was written ISMA-F and is corrected to SMA-F.",
     "· Multi-port sheet: insertion loss, rejection and isolation are printed only where that port’s source cell has text. A cell marked † repeats a merged source cell onto a blank port. The number is unchanged.",
 ]
@@ -71,7 +71,7 @@ BF_ZH_NOTES = [
     "· 原稿插损、波动未写不等号，本版按最大允许值规范为 ≤。",
     "· 回波损耗由端口驻波比 ≤ 1.3 换算：RL = −20 log10((VSWR−1)/(VSWR+1)) ≈ 17.7 dB。",
     "· 低互调档是订货选项。原稿没有给出实测互调，未选该档时不作为本页保证值。需要时按 2×43 dBm 测试并附报告。",
-    "· * 原稿表格内频率写作 1802–1833 MHz；来源文件名「1802-1883滤波器技术规格书.docx」与本型号编号均为 1802–1883。两处不一致。本页暂按文件名和型号印 1802–1883 MHz（带宽 81 MHz），标 *，以工厂书面确认为准。",
+    "· * 原稿表格写作 1802–1833 MHz（Word 显示与 XML 一致，格子够宽，不是溢出）；来源文件名「1802-1883滤波器技术规格书.docx」与型号 KXT-BF-18021883 均为 1802–1883。本页按表格印 1802–1833 MHz（带宽 31 MHz），标 *。型号编号不变。",
     "· 规格来源：1802-1883滤波器技术规格书.docx",
 ]
 BF_ZH_TRAIL = "订货写法：KXT-BF-18021883 + 接头公母 + 颜色（本色/黑色）+ 是否低互调档 + 数量。"
@@ -79,7 +79,7 @@ BF_EN_NOTES = [
     "· The source sheet gave insertion loss and ripple without a symbol. This revision states them as maximum values (≤).",
     "· Return loss is calculated from VSWR ≤ 1.3: RL = −20 log10((VSWR−1)/(VSWR+1)) ≈ 17.7 dB.",
     "· Low PIM is an order option. The source sheet has no measured PIM, so it is not a guaranteed value unless that option is ordered and reported.",
-    "· * The source table wrote 1802–1833 MHz; the source file name (1802-1883滤波器技术规格书.docx) and the model number are 1802–1883. The two disagree. This page keeps 1802–1883 MHz (bandwidth 81 MHz) after the file name and model, marked *, pending written factory confirmation.",
+    "· * The source table writes 1802–1833 MHz (the Word display matches the XML; the cell is wide, so this is not overflow). The file name (1802-1883滤波器技术规格书.docx) and the model number KXT-BF-18021883 are 1802–1883. This page prints the table value 1802–1833 MHz (bandwidth 31 MHz), marked *. The catalog model number is unchanged.",
     "· Source specification: 1802-1883滤波器技术规格书.docx",
 ]
 BF_EN_TRAIL = "Order as: KXT-BF-18021883 + connector gender + finish (natural/black) + low-PIM option + quantity."
@@ -226,7 +226,7 @@ def collect_text():
     for seq in (FF01_ZH_NOTES, FF01_EN_NOTES, FF0708_ZH_NOTES, FF0708_EN_NOTES,
                 BF_ZH_NOTES, BF_EN_NOTES):
         bag.extend(seq)
-    bag += [BF_ZH_TRAIL, BF_EN_TRAIL, CELL_NEW, "1802–1883 MHz *",
+    bag += [BF_ZH_TRAIL, BF_EN_TRAIL, CELL_NEW, "1802–1833 MHz *",
             "· 来源文件：3频合路器规格书.doc", "· 来源文件：3频合路器规格书 - 1.doc",
             "· Source file: 3频合路器规格书.doc", "· Source file: 3频合路器规格书 - 1.doc"]
     return " ".join(bag)
@@ -284,7 +284,8 @@ def patch_bf(fontfile):
     doc = pymupdf.open(path)
     n = 0
     for p in doc:
-        n += replace_cell(p, fontfile, "1802–1883 MHz", "1802–1883 MHz *")
+        n += replace_cell(p, fontfile, "1802–1883 MHz *", "1802–1833 MHz *") or replace_cell(p, fontfile, "1802–1883 MHz", "1802–1833 MHz *")
+        n += replace_cell(p, fontfile, "81 MHz", "31 MHz")
     n += write_notes(doc[0], fontfile, BF_ZH_NOTES, BF_ZH_TRAIL)
     n += write_notes(doc[1], fontfile, BF_EN_NOTES, BF_EN_TRAIL)
     tmp = str(path) + ".tmp"
