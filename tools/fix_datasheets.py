@@ -5,6 +5,10 @@ Values are reverted to what the factory source sheet says; inferred numbers
 are removed. Requires PyMuPDF (pip install pymupdf). Run from repo root:
     python tools/fix_datasheets.py
 Idempotent only in the sense that a second run finds nothing to replace.
+Do not re-run this script on the current PDFs: later source-faithful wording
+lives in tools/apply_source_corrections.py (FF-01 unit, FF-07/08 notes,
+BF-18021883 footnote). Rebuilding FF-04 / FF-23 uses rebuild_ff04_pdf.py
+and rebuild_ff23_pdf.py.
 """
 import pathlib, sys
 import pymupdf
