@@ -2,26 +2,39 @@
 """Shared head/footer/form/SEO pass over the static site in website/.
 
 Idempotent: run it after editing any page.
+    python3 tools/generate_locales.py
     python3 tools/build_site.py
 What it does (and nothing else):
-  * <head>: canonical, hreflang en/zh/x-default, Open Graph, JSON-LD
+  * <head>: canonical, hreflang en/zh/ru/es/pt/ar/x-default, Open Graph, JSON-LD
     (Organization + WebSite on the home pages, Product on product pages),
     written between <!-- seo:start --> and <!-- seo:end -->.
   * footer: sales@cavityfilter.com, clickable WhatsApp, Privacy and Terms.
-  * the RFQ form (contact + custom pages, EN and ZH) posting to FormSubmit.
-  * generated pages: contact/thanks.html, products/vhf-uhf-duplexers.html
-    (EN and ZH).
+  * the RFQ form (contact + custom pages in every locale) posting to FormSubmit.
+  * generated pages: contact/thanks.html, products/vhf-uhf-duplexers.html,
+    shelf models, application sub-pages (all locales).
   * sitemap.xml (absolute URLs + hreflang) and robots.txt.
+  * the six-language switcher on every page.
 Specification numbers are never generated here; they live in the pages.
+English and Chinese typo-corrected product bodies are not rewritten.
 """
-import html, json, pathlib, re, datetime
+import html, json, pathlib, re, datetime, sys
+from bs4 import BeautifulSoup
 
 SITE = "https://cavityfilter.com"
 EMAIL = "sales@cavityfilter.com"
 WA = "8618688718926"
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "website"
 FORM_ACTION = f"https://formsubmit.co/{EMAIL}"
-NOINDEX = {"contact/thanks.html", "zh/contact/thanks.html", "404.html"}
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from i18n.meta import (  # noqa: E402
+    ALL_LOCALES, NEW_LOCALES, LOCALES, locale_of, en_rel, loc_rel, page_href, og_alternates,
+)
+from i18n.forms import form_strings  # noqa: E402
+from i18n.translate import tr, translate_tree  # noqa: E402
+from i18n.switcher import switcher_html  # noqa: E402
+
+NOINDEX = {"404.html"} | {loc_rel("contact/thanks.html", loc) for loc in ALL_LOCALES}
 
 
 def rd(p): return p.read_text(encoding="utf-8")
@@ -31,10 +44,29 @@ def wr(p, s):
 
 
 def rel(p): return p.relative_to(ROOT).as_posix()
-def is_zh(r): return r.startswith("zh/")
-def en_of(r): return r[3:] if is_zh(r) else r
-def zh_of(r): return r if is_zh(r) else "zh/" + r
+def is_zh(r): return locale_of(r) == "zh"
+def en_of(r): return en_rel(r)
+def zh_of(r): return loc_rel(r, "zh")
 def up(r): return "../" * r.count("/")          # path from page to website root
+def lang_of(r): return locale_of(r)
+
+
+def lang_root(r):
+    """Relative path from this page to the root of its locale."""
+    e = en_of(r)
+    parent = pathlib.PurePosixPath(e).parent.as_posix()
+    if parent in (".", ""):
+        return ""
+    return "../" * (parent.count("/") + 1)
+
+
+def translate_fragment(lang, html_frag):
+    """Translate an English HTML fragment into lang (no-op for en)."""
+    if lang == "en":
+        return html_frag
+    soup = BeautifulSoup("<html><body>" + html_frag + "</body></html>", "html.parser")
+    translate_tree(soup, lang)
+    return "".join(str(c) for c in soup.body.contents)
 
 
 def url(r):
@@ -52,34 +84,16 @@ MODELS_RE = re.compile(r'<datalist id="model-list">.*?</datalist>', re.S)
 
 
 def form_html(lang, r, models, source):
-    zh = lang == "zh"
-    base = "../" * (r.count("/") - 1) if zh else up(r)  # path to the root of this language
-    thanks = url("zh/contact/thanks.html" if zh else "contact/thanks.html")
-    L = (dict(err="请填写所有必填项（姓名、公司、有效邮箱、国家、产品、需求；定制页还要数量）。", name="姓名", company="公司", email="邮箱", country="国家或地区",
-              phone="电话 / WhatsApp", product="产品或型号", model="型号", qty="数量", band="频段", power="功率", connector="接头",
-              pim="是否要低互调档", pno="不需要", pyes="需要，≤ −150 dBc", msg="需求说明", send="发送询价",
-              file="图纸或频段方案（可选）", filenote="PDF、DWG、DXF、STEP、JPG 或 PNG，合计不超过 10 MB。更大的文件请发邮件。",
-              alt="也可以：", wa="用 WhatsApp 发送", mail="发邮件到 " + EMAIL,
-              note="提交后询价直接发到 " + EMAIL + "，我们用邮件回复。表单经 FormSubmit（formsubmit.co）转发，见", privacy="隐私说明",
-              sending="正在发送…", fail="发送失败。请改用邮件或 WhatsApp，内容已保留在表单里。", subj="新询价 · cavityfilter.com（中文站）")
-         if zh else
-         dict(err="Fill in every required field (name, company, a valid email, country, product, message; quantity on the custom page).", name="Name", company="Company",
-              email="Work email", country="Country", phone="Phone / WhatsApp", product="Product or model", model="Model",
-              qty="Quantity", band="Frequency plan", power="Power", connector="Connector", pim="Low-PIM option",
-              pno="Not required", pyes="Required, ≤ −150 dBc", msg="Message", send="Send enquiry",
-              file="Drawing or band plan (optional)", filenote="PDF, DWG, DXF, STEP, JPG or PNG, 10 MB in total. Email larger files.",
-              alt="Or:", wa="Send on WhatsApp", mail="Email " + EMAIL,
-              note="The enquiry goes straight to " + EMAIL + " and we reply by email. The form is relayed by FormSubmit (formsubmit.co); see the",
-              privacy="privacy note", sending="Sending…",
-              fail="Sending failed. Please use email or WhatsApp instead; your text is still in the form.",
-              subj="New RFQ · cavityfilter.com"))
+    L = form_strings(lang)
+    base = lang_root(r)
+    thanks = url(loc_rel("contact/thanks.html", lang))
     custom = source == "custom"
-    prefill = (' value="定制"' if zh else ' value="Custom design"') if custom else ""
-    # custom page: drawing upload (FormSubmit takes multipart files, 10 MB total) and quantity required
+    prefill = f' value="{html.escape(L["custom_value"], quote=True)}"' if custom else ""
     enctype = ' enctype="multipart/form-data"' if custom else ""
     qty_req = " required" if custom else ""
     upload = (f'<label>{L["file"]}</label><input name="attachment" type="file" accept=".pdf,.dwg,.dxf,.step,.stp,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">'
               f'<p class="note">{L["filenote"]}</p>\n') if custom else ""
+    ltr = ' dir="ltr"' if lang == "ar" else ""
     return f"""<!-- rfq:start -->
 <form id="rfq" action="{FORM_ACTION}" method="POST"{enctype} data-ajax="https://formsubmit.co/ajax/{EMAIL}" data-wa="{WA}" data-error="{esc(L['err'])}" data-sending="{esc(L['sending'])}" data-fail="{esc(L['fail'])}">
 <input type="hidden" name="_subject" value="{esc(L['subj'])}">
@@ -88,9 +102,9 @@ def form_html(lang, r, models, source):
 <input type="hidden" name="_captcha" value="false">
 <input type="hidden" name="page" value="{url(r)}">
 <div class="row"><div><label>{L['name']}</label><input name="name" required></div><div><label>{L['company']}</label><input name="company" required></div></div>
-<div class="row"><div><label>{L['email']}</label><input name="email" type="email" required></div><div><label>{L['country']}</label><input name="country" required></div></div>
-<div class="row"><div><label>{L['phone']}</label><input name="phone"></div><div><label>{L['product']}</label><input name="product" required{prefill}></div></div>
-<div class="row"><div><label>{L['model']}</label><input name="model" list="model-list">{models}</div><div><label>{L['qty']}</label><input name="qty"{qty_req}></div></div>
+<div class="row"><div><label>{L['email']}</label><input name="email" type="email" required{ltr}></div><div><label>{L['country']}</label><input name="country" required></div></div>
+<div class="row"><div><label>{L['phone']}</label><input name="phone"{ltr}></div><div><label>{L['product']}</label><input name="product" required{prefill}></div></div>
+<div class="row"><div><label>{L['model']}</label><input name="model" list="model-list"{ltr}>{models}</div><div><label>{L['qty']}</label><input name="qty"{qty_req}></div></div>
 <div class="row"><div><label>{L['band']}</label><input name="band"></div><div><label>{L['power']}</label><input name="power"></div></div>
 <div class="row"><div><label>{L['connector']}</label><input name="connector"></div><div><label>{L['pim']}</label><select name="pim"><option value="no">{L['pno']}</option><option value="yes">{L['pyes']}</option></select></div></div>
 <label>{L['msg']}</label><textarea name="message" required></textarea>
@@ -98,43 +112,57 @@ def form_html(lang, r, models, source):
 <p id="form-error" class="error" role="alert"></p>
 <p><button class="btn" type="submit">{L['send']}</button></p>
 <p class="note">{L['alt']} <a class="btn ghost" id="wa-link" href="https://wa.me/{WA}" target="_blank" rel="noopener">{L['wa']}</a> <a class="btn ghost" id="mail-link" href="mailto:{EMAIL}">{L['mail']}</a></p>
-<p class="note">{L['note']} <a href="{base}privacy/index.html">{L['privacy']}</a>{'。' if zh else '.'}</p>
+<p class="note">{L['note']} <a href="{base}privacy/index.html">{L['privacy']}</a>{L['period']}</p>
 </form>
 <!-- rfq:end -->"""
 
 
 def put_form(r, source):
     p = ROOT / r
+    if not p.exists():
+        return
     s = rd(p)
     m = MODELS_RE.search(rd(ROOT / "contact/index.html"))
     models = m.group(0)
-    f = form_html("zh" if is_zh(r) else "en", r, models, source)
+    f = form_html(lang_of(r), r, models, source)
     if "<!-- rfq:start -->" in s:
         s = re.sub(r"<!-- rfq:start -->.*?<!-- rfq:end -->", lambda _: f, s, flags=re.S)
     elif '<form id="rfq"' in s:
         s = re.sub(r'<form id="rfq".*?</form>', lambda _: f, s, flags=re.S)
-    else:  # custom pages: add a heading + the form at the end of the prose block
-        h = "<h2>发来频段方案，直接询价</h2>" if is_zh(r) else "<h2>Send the band plan</h2>"
+    else:
+        lang = lang_of(r)
+        if lang == "zh":
+            h = "<h2>发来频段方案，直接询价</h2>"
+        elif lang == "en":
+            h = "<h2>Send the band plan</h2>"
+        else:
+            h = f"<h2>{tr(lang, 'Send the band plan')}</h2>"
         s = s.replace("</div></section>\n<footer", f"\n{h}\n{f}</div></section>\n<footer", 1)
     wr(p, s)
 
 
 # ---------------------------------------------------------------- footer
 def fix_footer(r, s):
-    zh = is_zh(r)
+    lang = lang_of(r)
     m = re.search(r'<footer class="site-footer">.*?</footer>', s, re.S)
     if not m: return s
     f = m.group(0)
     if f"mailto:{EMAIL}" not in f:
+        # location line may already be translated; match by structure as a fallback
         f = f.replace("<li>Shenzhen, Guangdong, China</li>",
                       f'<li>Shenzhen, Guangdong, China</li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li>', 1)
         f = f.replace("<li>WhatsApp · 张体进</li>", f'<li><a href="https://wa.me/{WA}" target="_blank" rel="noopener">WhatsApp · 张体进</a></li>', 1)
     if "privacy/index.html" not in f:
-        pm = re.search(r'(<div><h3>(?:Pages|页面)</h3><ul><li><a href="([^"]*)index.html">.*?)</ul>', f, re.S)
+        pm = re.search(r'(<div><h3>(?:Pages|页面|Страницы|Páginas|الصفحات)</h3><ul><li><a href="([^"]*)index.html">.*?)</ul>', f, re.S)
         if pm:
-            b = pm.group(2)  # path to this language's root, taken from the Home link
-            extra = (f'<li><a href="{b}privacy/index.html">隐私</a></li><li><a href="{b}terms/index.html">条款</a></li>' if zh else
-                     f'<li><a href="{b}privacy/index.html">Privacy</a></li><li><a href="{b}terms/index.html">Terms</a></li>')
+            b = pm.group(2)
+            if lang == "zh":
+                extra = f'<li><a href="{b}privacy/index.html">隐私</a></li><li><a href="{b}terms/index.html">条款</a></li>'
+            elif lang == "en":
+                extra = f'<li><a href="{b}privacy/index.html">Privacy</a></li><li><a href="{b}terms/index.html">Terms</a></li>'
+            else:
+                extra = (f'<li><a href="{b}privacy/index.html">{tr(lang, "Privacy")}</a></li>'
+                         f'<li><a href="{b}terms/index.html">{tr(lang, "Terms")}</a></li>')
             f = f.replace(pm.group(0), pm.group(1) + extra + "</ul>", 1)
     return s.replace(m.group(0), f, 1)
 
@@ -149,7 +177,7 @@ ORG = {"@type": "Organization", "@id": SITE + "/#org", "name": "Kangxuntong", "a
        "url": SITE + "/", "logo": SITE + "/assets/logo-lockup.png", "email": EMAIL, "telephone": "+86 186 8871 8926",
        "address": {"@type": "PostalAddress", "addressLocality": "Shenzhen", "addressRegion": "Guangdong", "addressCountry": "CN"},
        "contactPoint": {"@type": "ContactPoint", "contactType": "sales", "email": EMAIL, "telephone": "+86 186 8871 8926",
-                        "availableLanguage": ["en", "zh"]}}
+                        "availableLanguage": ["en", "zh", "ru", "es", "pt", "ar"]}}
 
 
 def product_ld(r, s, title, desc):
@@ -168,19 +196,24 @@ def product_ld(r, s, title, desc):
 
 
 def seo_block(r, s):
-    zh = is_zh(r)
+    lang = lang_of(r)
     title = text_of(r"<title>(.*?)</title>", s)
     desc = text_of(r'<meta name="description" content="([^"]*)"', s)
-    e, z = en_of(r), zh_of(r)
+    e = en_of(r)
     if r == "404.html":
         return '<!-- seo:start -->\n<meta name="robots" content="noindex">\n<!-- seo:end -->'
     lines = [f'<link rel="canonical" href="{url(r)}">']
     if r in NOINDEX:
         lines.append('<meta name="robots" content="noindex">')
-    if (ROOT / e).exists() and (ROOT / z).exists():
-        lines += [f'<link rel="alternate" hreflang="en" href="{url(e)}">',
-                  f'<link rel="alternate" hreflang="zh" href="{url(z)}">',
-                  f'<link rel="alternate" hreflang="x-default" href="{url(e)}">']
+    alts = []
+    for loc in ALL_LOCALES:
+        t = loc_rel(e, loc)
+        if (ROOT / t).exists():
+            alts.append((loc, t))
+    if alts:
+        for loc, t in alts:
+            lines.append(f'<link rel="alternate" hreflang="{loc}" href="{url(t)}">')
+        lines.append(f'<link rel="alternate" hreflang="x-default" href="{url(e)}">')
     stem = pathlib.Path(r).stem.upper()
     img = f"{SITE}/assets/drawings/{stem}.png" if (ROOT / "assets/drawings" / f"{stem}.png").exists() else f"{SITE}/assets/hero.jpg"
     is_prod = is_product(pathlib.Path(r).stem)
@@ -190,13 +223,14 @@ def seo_block(r, s):
               f'<meta property="og:description" content="{esc(desc)}">',
               f'<meta property="og:url" content="{url(r)}">',
               f'<meta property="og:image" content="{img}">',
-              f'<meta property="og:locale" content="{"zh_CN" if zh else "en_US"}">',
-              f'<meta property="og:locale:alternate" content="{"en_US" if zh else "zh_CN"}">',
-              '<meta name="twitter:card" content="summary_large_image">']
+              f'<meta property="og:locale" content="{LOCALES[lang]["og"]}">']
+    for alt_og in og_alternates(lang):
+        lines.append(f'<meta property="og:locale:alternate" content="{alt_og}">')
+    lines.append('<meta name="twitter:card" content="summary_large_image">')
     ld = []
     if e == "index.html":
         ld.append({"@context": "https://schema.org", "@graph": [ORG, {"@type": "WebSite", "@id": SITE + "/#website", "url": SITE + "/",
-                   "name": "Kangxuntong Cavity Filters", "inLanguage": "zh" if zh else "en", "publisher": {"@id": SITE + "/#org"}}]})
+                   "name": "Kangxuntong Cavity Filters", "inLanguage": lang, "publisher": {"@id": SITE + "/#org"}}]})
     elif e.startswith("products/") and is_product(pathlib.Path(e).stem):
         p = product_ld(r, s, title, desc)
         if p: ld.append(p)
@@ -211,10 +245,19 @@ def fix_head(r, s):
 
 
 def fix_misc(r, s):
-    # catalog thumbnails are CSS backgrounds: give them an accessible name
-    s = re.sub(r'<div class="thumb" style="background-image:url\(([^)]*/)?([A-Z0-9-]+)\.png\)"></div>',
-               lambda m: f'<div class="thumb" role="img" aria-label="{"外形图" if is_zh(r) else "Outline drawing of"} {m.group(2)}" style="background-image:url({m.group(1) or ""}{m.group(2)}.png)"></div>', s)
-    # zh product titles: Chinese product name + model
+    lang = lang_of(r)
+    def aria(model):
+        if lang == "zh":
+            return "外形图 " + model
+        if lang == "en":
+            return "Outline drawing of " + model
+        return tr(lang, "Outline drawing of") + " " + model
+    def thumb(m):
+        prefix = m.group(1) or ""
+        model = m.group(2)
+        return f'<div class="thumb" role="img" aria-label="{aria(model)}" style="background-image:url({prefix}{model}.png)"></div>'
+    s = re.sub(r'<div class="thumb" style="background-image:url\(([^)]*/)?([A-Z0-9-]+)\.png\)"></div>', thumb, s)
+    s = re.sub(r'<div class="thumb" role="img" aria-label="[^"]*" style="background-image:url\(([^)]*/)?([A-Z0-9-]+)\.png\)"></div>', thumb, s)
     if is_zh(r) and is_product(pathlib.Path(r).stem) and r.startswith("zh/products/"):
         model = pathlib.Path(r).stem.upper()
         h1 = text_of(r"<h1>(.*?)</h1>", s, model)
@@ -224,18 +267,16 @@ def fix_misc(r, s):
 
 # ---------------------------------------------------------------- generated pages
 def page_from(template_rel, new_rel, title, desc, body):
+    if not (ROOT / template_rel).exists():
+        return
     t = rd(ROOT / template_rel)
     head_end = t.index("</header>") + len("</header>")
     foot = t.index('<footer class="site-footer">')
     s = t[:head_end] + "\n" + body + "\n" + t[foot:]
     s = re.sub(r"<title>.*?</title>", f"<title>{esc(title)}</title>", s, count=1)
     s = re.sub(r'<meta name="description" content="[^"]*">', f'<meta name="description" content="{esc(desc)}">', s, count=1)
-    name = pathlib.Path(new_rel).name
-    if is_zh(new_rel):
-        lang = f'<span class="lang"><a href="../../{en_of(new_rel)}" class="">EN</a><a href="{name}" class="on">中文</a></span>'
-    else:
-        lang = f'<span class="lang"><a href="{name}" class="on">EN</a><a href="../zh/{new_rel}" class="">中文</a></span>'
-    s = re.sub(r'<span class="lang">.*?</span></span>|<span class="lang">.*?</span>', lang, s, count=1, flags=re.S)
+    nav = switcher_html(new_rel)
+    s = re.sub(r'<span class="lang">.*?</span>|<nav class="lang"[^>]*>.*?</nav>', nav, s, count=1, flags=re.S)
     wr(ROOT / new_rel, s)
 
 
@@ -278,15 +319,46 @@ def generated_pages():
     page_from("zh/products/more.html", "zh/products/vhf-uhf-duplexers.html", "VHF/UHF 对讲机（专网 LMR）双工器 | 康讯通",
               "康讯通深圳工厂的 VHF/UHF 腔体双工器：KXT26065 135–210 / 400–500 MHz，KXT-FF-09 452.5–457.5 / 462.5–467.5 MHz。指标以工厂规格书为准，随货附测试报告。",
               zh_body)
+    thanks_en = (
+        f'<div class="wrap page-hero"><h1>Thank you</h1><p>Your enquiry has been sent to {EMAIL}. We will reply by email.</p></div>'
+        f'<section style="padding-top:10px"><div class="wrap prose"><p>If it is urgent, you can also reach us on '
+        f'<a href="https://wa.me/{WA}" target="_blank" rel="noopener">WhatsApp +86 186 8871 8926</a> or write to <a href="mailto:{EMAIL}">{EMAIL}</a>.</p>'
+        f'<p><a class="btn" href="../products/index.html">Back to the catalog</a></p></div></section>'
+    )
+    vhf_title_en = "VHF/UHF Duplexers for Two-way Radio / LMR | Kangxuntong"
+    vhf_desc_en = ("VHF/UHF cavity duplexers for two-way radio (LMR) from a Shenzhen factory: "
+                   "KXT26065 135–210 / 400–500 MHz and KXT-FF-09 452.5–457.5 / 462.5–467.5 MHz. "
+                   "Factory-sheet specifications; test report with each unit.")
+    for lang in NEW_LOCALES:
+        if not (ROOT / loc_rel("contact/index.html", lang)).exists():
+            continue
+        page_from(loc_rel("contact/index.html", lang), loc_rel("contact/thanks.html", lang),
+                  tr(lang, "Thank you | Kangxuntong"),
+                  tr(lang, "Your enquiry has been sent to sales@cavityfilter.com."),
+                  translate_fragment(lang, thanks_en))
+        tmpl = loc_rel("products/more.html", lang)
+        if (ROOT / tmpl).exists():
+            page_from(tmpl, loc_rel("products/vhf-uhf-duplexers.html", lang),
+                      tr(lang, vhf_title_en), tr(lang, vhf_desc_en),
+                      translate_fragment(lang, en_body))
 
 
 def catalog_link():
-    for r, label, txt in (("products/index.html", "VHF/UHF (LMR)", "VHF/UHF Duplexers for Two-way Radio / LMR"),
-                          ("zh/products/index.html", "VHF/UHF（专网）", "VHF/UHF 对讲机（专网 LMR）双工器")):
-        p = ROOT / r; s = rd(p)
+    items = [
+        ("products/index.html", "VHF/UHF Duplexers for Two-way Radio / LMR"),
+        ("zh/products/index.html", "VHF/UHF 对讲机（专网 LMR）双工器"),
+    ]
+    for lang in NEW_LOCALES:
+        items.append((loc_rel("products/index.html", lang),
+                      tr(lang, "VHF/UHF Duplexers for Two-way Radio / LMR")))
+    for r, txt in items:
+        path = ROOT / r
+        if not path.exists():
+            continue
+        s = rd(path)
         if "vhf-uhf-duplexers.html" not in s:
             s = s.replace('<div class="filters">', f'<p><a class="btn ghost" href="vhf-uhf-duplexers.html">{txt} →</a></p>\n<div class="filters">', 1)
-        wr(p, s)
+        wr(path, s)
 
 
 # ---------------------------------------------------------------- shelf model pages
@@ -380,12 +452,57 @@ def shelf_pages():
     for model, typ, band in SHELF:
         shelf_page(model, typ, band, False)
         shelf_page(model, typ, band, True)
+        for lang in NEW_LOCALES:
+            if (ROOT / loc_rel("products/kxt-bf-703748.html", lang)).exists():
+                shelf_page_locale(model, typ, band, lang)
     # link the shelf rows on the catalog (the VHF/UHF page links KXT26065 in its own body)
-    for r in ("products/index.html", "zh/products/index.html"):
-        p = ROOT / r; s = rd(p)
+    for loc in ALL_LOCALES:
+        r = loc_rel("products/index.html", loc)
+        path = ROOT / r
+        if not path.exists():
+            continue
+        s = rd(path)
         for model, _, _ in SHELF:
             s = s.replace(f"<td>{model}</td>", f'<td><a href="{model.lower()}.html">{model}</a></td>')
-        wr(p, s)
+        wr(path, s)
+
+
+def shelf_page_locale(model, typ, band, lang):
+    """Build a translated shelf page from the English template."""
+    low = model.lower()
+    # Reuse the English body by temporarily rendering it, then translating.
+    # Datasheet path must climb to the site root (one extra ../ under /ru/ etc.).
+    rows = [("Model", model), ("Type (as on the quotation)", TYPE_ROSTER_EN[typ]), ("Passband", band),
+            ("Impedance", "50 Ω (series interface)"), ("Construction", "Indoor, aluminum cavity (series interface)"),
+            ("Insertion loss / ripple / rejection", "Not stated on the quotation; on the unit’s factory test report"),
+            ("Power", "—, state it on the enquiry"), ("Connector", "—, state it on the enquiry"), ("Outline", "—, contact us"),
+            ("Low-PIM option", "Order option, confirmed on the quotation")]
+    extra = ""
+    if model == "KXT26065":
+        extra = ('<p>A duplexer for VHF/UHF private radio (LMR). See also <a href="vhf-uhf-duplexers.html">VHF/UHF duplexers</a>'
+                 ' and <a href="../applications/private-networks.html">TETRA / P25 / DMR networks</a>.</p>')
+    body = f"""<div class="wrap page-hero"><p class="crumbs"><a href="index.html">Products</a> / {model}</p>
+<h1>{TYPE_EN[typ]} {band}</h1><p class="kicker">{model} · Quotation shelf, 29 May 2026</p></div>
+<section style="padding-top:10px"><div class="wrap layout">
+<div>
+<h2>What the quotation states</h2>
+<table class="spec"><tbody>{''.join(f'<tr><th>{a}</th><td>{b}</td></tr>' for a, b in rows)}</tbody></table>
+<p class="note">This model is on the commercial shelf of the company quotation. The quotation gives the passband only, not insertion loss or rejection, and this page does not borrow electrical limits from other models. Rows marked “—” are settled on the quotation and the unit’s test report.</p>
+{extra}</div>
+<aside class="side">
+<div class="card"><h3>{model}</h3>
+<p><a class="btn" href="../contact/index.html?model={model}">Request a quote</a></p>
+<p><a class="btn ghost" href="../../datasheets/KXT-ROSTER-20260529.pdf">Shelf model list PDF</a></p>
+</div>
+<div class="card"><h3>Ordering</h3><p>{model} + connector + power + low-PIM option + quantity</p><p>Need a different passband? Send the band plan on the <a href="../custom/index.html">custom design</a> page.</p></div>
+</aside>
+</div></section>"""
+    title = f"{model} {TYPE_EN[typ]} {band} | Kangxuntong"
+    desc = (f"{model} {TYPE_EN[typ].lower()}, passband {band}. "
+            "Shelf model from the 29 May 2026 quotation; 50 Ω indoor aluminum cavity. Electrical limits are on the unit’s test report.")
+    page_from(loc_rel("products/kxt-bf-703748.html", lang), loc_rel(f"products/{low}.html", lang),
+              tr(lang, title), tr(lang, desc), translate_fragment(lang, body))
+
 
 
 # ---------------------------------------------------------------- application sub-pages
@@ -520,6 +637,12 @@ APPS_ZH = {
 def app_pages():
     for r, (t, d, b) in APPS_EN.items(): page_from("applications/index.html", r, t, d, b)
     for r, (t, d, b) in APPS_ZH.items(): page_from("zh/applications/index.html", r, t, d, b)
+    for lang in NEW_LOCALES:
+        tmpl = loc_rel("applications/index.html", lang)
+        if not (ROOT / tmpl).exists():
+            continue
+        for r, (t, d, b) in APPS_EN.items():
+            page_from(tmpl, loc_rel(r, lang), tr(lang, t), tr(lang, d), translate_fragment(lang, b))
 
 
 # ---------------------------------------------------------------- 404
@@ -533,13 +656,22 @@ def page_404():
 <section style="padding-top:10px"><div class="wrap prose">
 <p><a class="btn" href="products/index.html">Product catalog</a> <a class="btn ghost" href="index.html">Home</a> <a class="btn ghost" href="contact/index.html">Contact</a></p>
 <p>Looking for a model? Write to <a href="mailto:sales@cavityfilter.com">sales@cavityfilter.com</a> with the model number or the band plan.</p>
-<p lang="zh">页面不存在。<a href="zh/index.html">返回中文首页</a> · <a href="zh/products/index.html">产品目录</a></p>
+<p lang="zh">页面不存在。<a href="/zh/">返回中文首页</a> · <a href="/zh/products/index.html">产品目录</a></p>
+<p lang="ru">Страница не найдена. <a href="/ru/">На главную (RU)</a> · <a href="/ru/products/index.html">Каталог</a></p>
+<p lang="es">Página no encontrada. <a href="/es/">Inicio (ES)</a> · <a href="/es/products/index.html">Catálogo</a></p>
+<p lang="pt">Página não encontrada. <a href="/pt/">Início (PT)</a> · <a href="/pt/products/index.html">Catálogo</a></p>
+<p lang="ar" dir="rtl">الصفحة غير موجودة. <a href="/ar/">الرئيسية (AR)</a> · <a href="/ar/products/index.html">الكتالوج</a></p>
 </div></section>"""
     s = t[:head_end] + "\n" + body + "\n" + t[foot:]
     s = re.sub(r"<title>.*?</title>", "<title>Page not found | Kangxuntong</title>", s, count=1)
     s = re.sub(r'<meta name="description" content="[^"]*">', '<meta name="description" content="Page not found.">', s, count=1)
     s = re.sub(r'(href|src)="(?!https?:|mailto:|tel:|#|/)([^"]*)"', r'\1="/\2"', s)
-    s = s.replace('href="/index.html"', 'href="/"').replace('href="/zh/index.html"', 'href="/zh/"')
+    s = s.replace('href="/index.html"', 'href="/"')
+    for loc in ALL_LOCALES:
+        if loc == "en":
+            continue
+        s = s.replace(f'href="/{loc}/index.html"', f'href="/{loc}/"')
+    s = re.sub(r'<span class="lang">.*?</span>|<nav class="lang"[^>]*>.*?</nav>', switcher_html("404.html"), s, count=1, flags=re.S)
     wr(ROOT / "404.html", s)
 
 
@@ -553,10 +685,16 @@ def sitemap(pages):
         out.append("  <url>")
         out.append(f"    <loc>{html.escape(url(r))}</loc>")
         out.append(f"    <lastmod>{today}</lastmod>")
-        e, z = en_of(r), zh_of(r)
-        if (ROOT / e).exists() and (ROOT / z).exists():
-            for hl, t in (("en", e), ("zh", z), ("x-default", e)):
+        e = en_of(r)
+        alts = []
+        for loc in ALL_LOCALES:
+            t = loc_rel(e, loc)
+            if (ROOT / t).exists():
+                alts.append((loc, t))
+        if alts:
+            for hl, t in alts:
                 out.append(f'    <xhtml:link rel="alternate" hreflang="{hl}" href="{html.escape(url(t))}"/>')
+            out.append(f'    <xhtml:link rel="alternate" hreflang="x-default" href="{html.escape(url(e))}"/>')
         out.append("  </url>")
     out.append("</urlset>")
     wr(ROOT / "sitemap.xml", "\n".join(out) + "\n")
@@ -565,20 +703,27 @@ def sitemap(pages):
     if old.exists(): old.unlink()
 
 
+def fix_switcher(r, s):
+    nav = switcher_html(r)
+    return re.sub(r'<span class="lang">.*?</span>|<nav class="lang"[^>]*>.*?</nav>', nav, s, count=1, flags=re.S)
+
+
 def main():
     generated_pages()
     shelf_pages()
     app_pages()
     page_404()
     catalog_link()
-    for r in ("contact/index.html", "zh/contact/index.html"): put_form(r, "contact")
-    for r in ("custom/index.html", "zh/custom/index.html"): put_form(r, "custom")
+    for loc in ALL_LOCALES:
+        put_form(loc_rel("contact/index.html", loc), "contact")
+        put_form(loc_rel("custom/index.html", loc), "custom")
     pages = sorted(rel(p) for p in ROOT.rglob("*.html"))
     for r in pages:
         p = ROOT / r
         s = rd(p)
         s = fix_misc(r, s)
         s = fix_footer(r, s)
+        s = fix_switcher(r, s)
         s = fix_head(r, s)
         wr(p, s)
     sitemap(pages)
